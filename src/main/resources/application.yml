@@ -1,1 +1,37 @@
+logging:
+  pattern:
+    console: "%clr(%d{HH:mm:ss.SSS}){blue} %clr(---){faint} %clr([%15.15t]){yellow} %clr(:){red} %clr(%m){faint}%n"
+  level:
+    root: info
 
+spring:
+  application:
+    name: streaming-processor
+
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    #Producer Auto Config
+    producer:
+      client-id: purchase-orders-avro-producer
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+      retries: 3
+      properties:
+        schema.registry.url: http://localhost:8081
+
+    #Streams Auto Config Properties
+    streams:
+      client-id: purchase-orders-streaming-consumer
+      application-id: purchase-orders-streaming-consumer-app
+      properties:
+        schema.registry.url: http://localhost:8081
+        default:
+          key:
+            serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+          value:
+            serde: io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde
+
+app:
+  input-topic: purchase_order_topic
+  destination-topic: purchase_order_topic_aggregator
