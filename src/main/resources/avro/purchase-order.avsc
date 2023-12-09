@@ -1,0 +1,32 @@
+{
+  "namespace": "com.ashok.demos.domain",
+  "type": "record",
+  "name": "PurchaseOrder",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string",
+      "avro.java.string": "String"
+    },
+    {
+      "name": "code",
+      "type": "string",
+      "avro.java.string": "String"
+    },
+    {
+      "name": "id",
+      "type": "string",
+      "avro.java.string": "String"
+    },
+    {
+      "name": "purchasedDate",
+      "type": "string",
+      "avro.java.string": "String"
+    },
+    {
+      "name": "customerId",
+      "type": "string",
+      "avro.java.string": "String"
+    }
+  ]
+}
