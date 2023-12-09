@@ -20,6 +20,14 @@ spring:
       properties:
         schema.registry.url: http://localhost:8081
 
+    consumer:
+      group-id: purchase-order-consumer
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: io.confluent.kafka.serializers.KafkaAvroDeserializer
+      properties:
+        schema.registry.url: http://localhost:8081
+
     #Streams Auto Config Properties
     streams:
       client-id: purchase-orders-streaming-consumer

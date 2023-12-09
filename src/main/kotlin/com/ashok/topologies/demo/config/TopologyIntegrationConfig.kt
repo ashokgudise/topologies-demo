@@ -2,6 +2,8 @@ package com.ashok.topologies.demo.config
 
 import com.ashok.demos.domain.PurchaseOrder
 import io.github.serpro69.kfaker.faker
+import org.apache.avro.generic.GenericRecord
+import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.StreamsBuilder
 import org.apache.kafka.streams.kstream.*
@@ -14,13 +16,18 @@ import org.springframework.integration.dsl.IntegrationFlow
 import org.springframework.integration.dsl.Pollers
 import org.springframework.integration.dsl.SourcePollingChannelAdapterSpec
 import org.springframework.integration.kafka.dsl.Kafka
+import org.springframework.integration.kafka.inbound.KafkaMessageDrivenChannelAdapter.ListenerMode
 import org.springframework.kafka.annotation.EnableKafkaStreams
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.KafkaHeaders
+import org.springframework.messaging.MessageHeaders
 import org.springframework.messaging.support.GenericMessage
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.*
+
 
 @Configuration
 @EnableKafkaStreams
@@ -66,25 +73,48 @@ class TopologyIntegrationConfig {
     @Bean
     fun integrationFlow(): IntegrationFlow? {
         return IntegrationFlow
-            .from({ GenericMessage("") } ) {
-                    c: SourcePollingChannelAdapterSpec ->
-                c.poller( Pollers.fixedDelay(1000))
+            .from({ GenericMessage("") }) { c: SourcePollingChannelAdapterSpec ->
+                c.poller(Pollers.fixedDelay(1000))
                     .autoStartup(true)
                     .id("schedulerProducerFlow")
             }
             .transform<String, PurchaseOrder> {
                 val faker = faker { }
-                val po = PurchaseOrder( faker.device.modelName(),
+                val po = PurchaseOrder(
+                    faker.device.modelName(),
                     faker.device.serial(),
                     faker.idNumber.toString(),
                     generateRandomDate(),
-                    faker.random.randomString(10, true))
-                println("Purchase Order from Avro Profile \t$po")
+                    faker.random.randomString(10, true)
+                )
+                println("Streams:: Purchase Order from Avro Profile \t$po")
                 po
             }
             .enrichHeaders { headers -> headers.headerExpression(KafkaHeaders.KEY, "payload.name") }
-            .channel (WRITE_TO_KAFKA)
+            .channel(WRITE_TO_KAFKA)
             .get()
+    }
+
+
+
+
+
+    @Bean
+    fun kafkaConsumer(): IntegrationFlow {
+        return IntegrationFlow
+            .from(Kafka.messageDrivenChannelAdapter(concurrentConsumerFactory()
+                .createContainer(inputTopic),
+                    ListenerMode.record)
+                    .id("purchaseOrderConsumerCnf"))
+
+            .handle {
+                    purchaseOrder: GenericRecord, _: MessageHeaders ->
+                    println("Kafka Consumer:: Purchase Order Received for :: $purchaseOrder")
+                    purchaseOrder
+            }
+            .channel("nullChannel")
+            .get()
+
     }
 
     @Bean
@@ -97,6 +127,25 @@ class TopologyIntegrationConfig {
         return IntegrationFlow.from(WRITE_TO_KAFKA)
             .handle(Kafka.outboundChannelAdapter(kafkaTemplate))
             .get()
+    }
+
+
+    @Bean
+    fun concurrentConsumerFactory(): ConcurrentKafkaListenerContainerFactory<String, PurchaseOrder> {
+
+        val props: Map<String, Any> = mutableMapOf<String, Any>().apply {
+            put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaProperties.bootstrapServers)
+            put(ConsumerConfig.GROUP_ID_CONFIG, kafkaProperties.consumer.groupId)
+            put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, kafkaProperties.consumer.autoOffsetReset)
+            put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, kafkaProperties.consumer.keyDeserializer)
+            put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, kafkaProperties.consumer.valueDeserializer)
+            kafkaProperties.consumer.properties["schema.registry.url"]?.let { put("schema.registry.url", it) }
+        }
+
+        return ConcurrentKafkaListenerContainerFactory<String, PurchaseOrder>().apply {
+            consumerFactory = DefaultKafkaConsumerFactory(props)
+            setConcurrency(3) // Set your concurrency level
+        }
     }
 
     fun generateRandomDate(): String {
