@@ -7,5 +7,5 @@ import org.springframework.boot.runApplication
 class TopologiesDemoApplication
 
 fun main(args: Array<String>) {
-	runApplication<TopologiesDemoApplication>(*args)
+    runApplication<TopologiesDemoApplication>(*args)
 }
