@@ -60,7 +60,7 @@ class TopologyIntegrationConfig {
             .transform<String, PurchaseOrder> {
                 val faker = faker { }
                 //Generating Random Data
-                val po = PurchaseOrder( faker.device.modelName(), faker.device.serial(),
+                val po = PurchaseOrder( faker.food.dish(), faker.food.hashCode().toString(),
                     faker.idNumber.toString(),  generateRandomDate(), faker.random.
                     randomString(10, true))
 
