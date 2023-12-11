@@ -28,7 +28,6 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.*
 
-
 @Configuration
 @EnableKafkaStreams
 class TopologyIntegrationConfig {
@@ -46,6 +45,37 @@ class TopologyIntegrationConfig {
     @Value("\${app.destination-topic}")
     private val destinationTopic: String? = null
 
+
+    //Producer
+    @Bean
+    fun integrationFlow(): IntegrationFlow? {
+        return IntegrationFlow
+                //Scheduler to trigger the flow for every 1000 ms
+            .from({ GenericMessage("") }) { c: SourcePollingChannelAdapterSpec ->
+                c.poller(Pollers.fixedDelay(1000))
+                    .autoStartup(true)
+                    .id("schedulerProducerFlow")
+            }
+
+            .transform<String, PurchaseOrder> {
+                val faker = faker { }
+                //Generating Random Data
+                val po = PurchaseOrder( faker.device.modelName(), faker.device.serial(),
+                    faker.idNumber.toString(),  generateRandomDate(), faker.random.
+                    randomString(10, true))
+
+                println("Streams:: Purchase Order from Avro Profile \t$po")
+                po
+            }
+
+            //Adding the Payload's name as Kafka Key in the headers.
+            .enrichHeaders { headers ->
+                headers.headerExpression(KafkaHeaders.KEY, "payload.name") }
+
+            .channel(WRITE_TO_KAFKA)
+            .get()
+    }
+
     @Bean
     fun customStreamProcess(kStreamBuilder: StreamsBuilder): KTable<String, Long> {
 
@@ -54,7 +84,7 @@ class TopologyIntegrationConfig {
         var table: KTable<String, Long> = input
             .groupByKey()
             .count()
-        table.toStream().to(destinationTopic, Produced.with(Serdes.String(), Serdes.Long()))
+            table.toStream().to(destinationTopic, Produced.with(Serdes.String(), Serdes.Long()))
 
         // Consume the KTable from the output topic
         val purchaseOrderCounts: KTable<String, Long> = kStreamBuilder.table(
@@ -62,41 +92,12 @@ class TopologyIntegrationConfig {
             Consumed.with(Serdes.String(), Serdes.Long())
         )
 
-        // Process the KTable
-        purchaseOrderCounts
-            .toStream()
+        // Process the KTable with the Totals by Message Key
+        purchaseOrderCounts.toStream()
             .foreach { key, value -> println("Key: $key, Count: $value") }
 
         return table
     }
-
-    @Bean
-    fun integrationFlow(): IntegrationFlow? {
-        return IntegrationFlow
-            .from({ GenericMessage("") }) { c: SourcePollingChannelAdapterSpec ->
-                c.poller(Pollers.fixedDelay(1000))
-                    .autoStartup(true)
-                    .id("schedulerProducerFlow")
-            }
-            .transform<String, PurchaseOrder> {
-                val faker = faker { }
-                val po = PurchaseOrder(
-                    faker.device.modelName(),
-                    faker.device.serial(),
-                    faker.idNumber.toString(),
-                    generateRandomDate(),
-                    faker.random.randomString(10, true)
-                )
-                println("Streams:: Purchase Order from Avro Profile \t$po")
-                po
-            }
-            .enrichHeaders { headers -> headers.headerExpression(KafkaHeaders.KEY, "payload.name") }
-            .channel(WRITE_TO_KAFKA)
-            .get()
-    }
-
-
-
 
 
     @Bean
@@ -107,11 +108,21 @@ class TopologyIntegrationConfig {
                     ListenerMode.record)
                     .id("purchaseOrderConsumerCnf"))
 
-            .handle {
-                    purchaseOrder: GenericRecord, _: MessageHeaders ->
-                    println("Kafka Consumer:: Purchase Order Received for :: $purchaseOrder")
-                    purchaseOrder
+            .transform<GenericRecord, PurchaseOrder> {
+                record ->
+                    PurchaseOrder(record["name"].toString(),record["code"].toString(),
+                            record["id"].toString(),
+                                record["purchasedDate"].toString(),
+                                        record["customerId"].toString())
             }
+
+            //Perform any operation on the payload
+            .handle {
+                    po: PurchaseOrder, _: MessageHeaders ->
+                    println("Kafka Consumer:: Purchase Order Received for :: $po")
+                    po
+            }
+
             .channel("nullChannel")
             .get()
 
@@ -128,7 +139,6 @@ class TopologyIntegrationConfig {
             .handle(Kafka.outboundChannelAdapter(kafkaTemplate))
             .get()
     }
-
 
     @Bean
     fun concurrentConsumerFactory(): ConcurrentKafkaListenerContainerFactory<String, PurchaseOrder> {
